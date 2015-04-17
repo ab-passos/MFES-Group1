@@ -1,58 +1,59 @@
 #include <stdio.h>
 #include <stdlib.h>
+
 #include "sensor.h"
 
-#define MAX_QUEUE 200
+/* global queue instance to be modified by the assignment functions */
+
+extern sensor_t *sensor_result_queue;
 
 
-// The global queue defined in sensor.h
-extern s_queue_t *sensor_result_queue;
 
-int main(int argc, char *argv[])
+void print_sensor(sensor_t *sensor);
+
+int main()
 {
-	sensor_result_queue = new_queue(MAX_QUEUE);
+	sensor_t sensor;
 
-	int *i = &argc;
+	init_sensor(&sensor);
 
-	// initial queue test
+	scan_result_t result;
 
-	SENSOR_A_get_result_y_t *scan_result_y = (SENSOR_A_get_result_y_t *) malloc (sizeof (SENSOR_A_get_result_y_t));
+	result.id = 1;
+	result.request_type = REQUEST_X;
+	result.result_x = (SENSOR_A_get_result_x_t *) malloc (sizeof(SENSOR_A_get_result_x_t));
 
-	scan_result_y->value1 = /* ... */ 3.0f;
-	scan_result_y->value2 = /* ... */ 2.0f;
-	scan_result_y->value3 = /* ... */ 1.0f;
+	result.result_x->value1 = 0.0f;
+	result.result_x->value2 = 0.1f;
 
-	scan_result_t *scan_result1 = (scan_result_t *) malloc (sizeof (scan_result_t));
+	add_result(&sensor, &result);
 
-	/* Tag it as a Y result */
-	scan_result1->request_type = REQUEST_Y;
-	scan_result1->result_y = scan_result_y;
+	scan_result_t *da_result = NULL;
+	get_result(&sensor, 2, &da_result, REQUEST_X);
 
+	printf("Did it work? %d\n", da_result != NULL);
 
-	SENSOR_A_get_result_x_t *scan_result_x = (SENSOR_A_get_result_x_t *) malloc (sizeof (SENSOR_A_get_result_x_t));
-
-	scan_result_x->value1 = /* ... */ 0.0f;
-	scan_result_x->value2 = /* ... */ 0.0f;
-
-	scan_result_t *scan_result2 = (scan_result_t *) malloc (sizeof (scan_result_t));
-
-	/* Tag it as a X result */
-	scan_result2->request_type = REQUEST_X;
-	/* Assign nested structure */
-	scan_result2->result_x = scan_result_x;
-
-	push_result(sensor_result_queue, scan_result1, i);
-	push_result(sensor_result_queue, scan_result2, i);
-
-	// Assignment functions test
-
-	SENSOR_A_get_result_y_t *params_p = (SENSOR_A_get_result_y_t *) malloc (sizeof (SENSOR_A_get_result_y_t));
-	printf("[%d]\n", SENSOR_A_get_result_scan_y(0, params_p));
-
-	SENSOR_A_get_result_x_t *params_p_2 = (SENSOR_A_get_result_x_t *) malloc (sizeof (SENSOR_A_get_result_x_t));
-	printf("[%d]\n", SENSOR_A_get_result_scan_x(2, params_p_2));
-
-	show_queue(sensor_result_queue);
+	print_sensor(&sensor);
 
 	return 0;
+}
+
+void print_sensor(sensor_t *sensor)
+{
+	int aux = 0;
+	for(int i = 0; i < CAPACITY; ++i)
+	{
+		printf("   %3d -> ", i);
+		if(sensor->scan_results[i])
+			printf("( %2d )", sensor->scan_results[i]->request_type);
+		else
+			printf("(null)");
+
+		aux++;
+		if(aux == 6){
+			printf("\n");
+			aux = 0;
+		}
+
+	}
 }
