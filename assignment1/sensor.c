@@ -6,10 +6,6 @@
 
 extern sensor_t *sensor_result_queue;
 
-
-
-
-
 /*
 Pre:
 Capacity > 0
@@ -25,10 +21,13 @@ Capacity > 0
     assigns Storage(s)[0..(Capacity−1)];
     assigns s->size;
 
-    ensures VALID: Valid(s);
     ensures EMPTY: Empty(s);
 
     ensures NULLIFIED: \forall integer k ; (0 <= k < Capacity) ==> (Storage(s)[k] == \null);
+    ensures VALID: \valid(s) &&
+                                0 < Capacity &&
+                                0 <= Size(s) < Capacity &&
+                \valid(Storage(s) + (0..Capacity-1));
 */
 
 void init_sensor(sensor_t *s)
@@ -46,34 +45,10 @@ void init_sensor(sensor_t *s)
 
     s->size = 0;
 }
-/*
-Pre:
-Size < Capacity
-valid sensor
-valid result
-valid id
-
-Post:
-sensor->indexes->size = \old(sensor->indexes->size) - 1
-id = \old(sensor->indexes->top)
-sensor->array [id] = result
-\forall integer i; i != id ==> \at(sensor->scan_results[i], Pre) ==  \at(sensor->scan_results[i], Here)
-*/
-
-/*
-    id must be a valid int*
-
-    two behaviours
-        if no "holes" in array insert in next open position;
-    else
-        insert into first "hole"
-*/
 
 /*@
-    requires \valid(s);
+    requires Valid(s);
     requires \valid(result);
-
-    requires \valid(Storage(s)+(0..Capacity−1));
 
     requires ExistsFreeSlot(s);
 
@@ -90,7 +65,8 @@ sensor->array [id] = result
         assumes \exists integer k ; 0 <= k < Capacity && Storage(s)[k] == \null;
         assumes \exists integer k ; 0 <= k < Capacity && Storage(s)[k] != \null && Storage(s)[k]->id == result->id;
 
-        ensures RESULT_IS_BAD_2: \result == -2;
+        ensures RESULT_IS_2: \result == -2;
+        ensures Valid(s);
 
     behavior success:
         assumes Size(s) < Capacity;
@@ -99,8 +75,10 @@ sensor->array [id] = result
 
         ensures RESULT_ADDED: \exists integer k ; 0 <= k < Capacity && \at(Storage(s)[k], Pre) == 0 && \at(Storage(s)[k], Here) == result;
         ensures SIZE_INCREMENT: \at(s->size, Here) == \at(s->size, Pre) + 1;
+
         ensures RESULT_IS_ZERO: \result == 0;
-    
+        ensures Valid(s);
+
     complete behaviors;
     disjoint behaviors;
 */
@@ -147,26 +125,28 @@ int add_result(sensor_t *s, scan_result_t *result)
 }
 
 /*@
-    requires \valid(s);
-    requires \valid(Storage(s)[0..(Capacity−1)]);
-    requires s->size > 0;
+    requires Valid(s);
 
     requires \valid(results);
 
-    requires NoIdEqual(s); 
+    requires NoIdEqual{Here}(s); 
 
     behavior no_result:
         assumes  \forall integer k; (0 <= k < 200) ==> !(\valid(Storage(s)[k]) && Storage(s)[k]->id == id && (Storage(s)[k]->request_type == rtype));
         ensures NRES : \result == -1;
-        ensures NoIdEqual(s); 
+
         ensures Unchanged{Pre,Here}(s);
+
+        ensures Valid(s);
         
     behavior has_result:
         assumes  \exists integer k; (0 <= k < Capacity) && \valid(Storage(s)[k]) && Storage(s)[k]->id == id && (Storage(s)[k]->request_type == rtype);
         ensures HRES : \result == 0;
-        ensures NoIdEqual(s);
+
         ensures \exists integer k; (0 <= k < Capacity) && \valid(Storage(s)[k]) && Storage(s)[k]->id == id && (Storage(s)[k]->request_type == rtype)
              && popIndex{Pre,Here}(s, k);
+
+        ensures Valid(s);
 
 
     complete behaviors;
@@ -203,20 +183,49 @@ int get_result(sensor_t *s, int id, scan_result_t **results, REQUEST_TYPE rtype)
 // ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==
 //   ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==
 // ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==  ==
+/*
 
+Can you check the property that if we request more than 200 scans that the function will return ERROR_SCAN_A or ERROR_SCAN_B;
+Can you also check that if during a get_result someone passes an invalid Id that the returned error code is ERROR_GET_SCAN_A or ERROR_GET_SCAN_B;
+The previous functions should also return to clients the id of the scan in the pointer id_p (I do not see this happening now). In the case of an error the pointer should be -1; Also a property to check;
+Please use the #defines OK, Error, etc.
 
+#define RESPONSE int
+#define OK 0
+#define ERROR_SCAN_A 1
+#define ERROR_GET_SCAN_A 2
+
+*/
 
 /*@
+    requires Valid(sensor_result_queue);
+    requires \valid(params_p);
+    requires \valid(id_p);
 
-    ensures \result == 0 || \result == 1;
+    behavior not_full:
+        assumes NotFull(sensor_result_queue);
+
+        ensures RESULT_IS_OK:\result == 0;
+        ensures Valid(sensor_result_queue);
+
+    behavior full:
+        assumes Full(sensor_result_queue);
+
+        ensures RESULT_IS_BAD: \result == 1;
+        ensures Valid(sensor_result_queue);
+
+
+    complete behaviors;
+    disjoint behaviors;
 */
+
 RESPONSE SENSOR_A_request_x (const SENSOR_request_scan_x_t *params_p, int *id_p)
 {
     /* Check for free space Example: request_cout < 200 */
 
     if(sensor_result_queue->size >= CAPACITY)
     {
-        return ERROR_SCAN_A;
+        return ERROR_GET_SCAN_A;
     }
 
     /*
@@ -230,7 +239,8 @@ RESPONSE SENSOR_A_request_x (const SENSOR_request_scan_x_t *params_p, int *id_p)
 
     scan_result_t *scan_result = (scan_result_t *) malloc (sizeof (scan_result_t));
 
-    scan_result->id = 000000000000001;
+    scan_result->id = 0 /* Should be generated */;
+    // *id_p = 0
 
     /* Tag it as a X result */
     scan_result->request_type = REQUEST_X;
@@ -240,20 +250,38 @@ RESPONSE SENSOR_A_request_x (const SENSOR_request_scan_x_t *params_p, int *id_p)
 
     /* Push result onto the global queue */
 
-
     int res = add_result(sensor_result_queue, scan_result);
     
-    if(res != 0)
-        return ERROR_SCAN_A;
-
-
-    return OK;
+    if(res < 0)
+        return ERROR_GET_SCAN_A;
+    else
+        return OK;
 }
 
+/*
+#define REQUEST_TYPE int
+#define REQUEST_X 0
+#define REQUEST_Y 1
+*/
 
 /*@
+    requires Valid(sensor_result_queue);
+    requires \valid(params_p);
 
-    ensures \result == 0 || \result == 2;
+    behavior valid_id:
+        assumes \exists integer k; (0 <= k < Capacity) && Storage(sensor_result_queue)[k]->id == id && (Storage(sensor_result_queue)[k]->request_type == 0);
+        assigns *params_p;
+
+        ensures \result == 0;
+        ensures Valid(sensor_result_queue);
+
+    behavior invalid_id:
+        assumes \forall integer k; (0 <= k < Capacity) ==> Storage(sensor_result_queue)[k]->id != id || (Storage(sensor_result_queue)[k]->request_type != 0);
+        ensures \result == 2;
+        ensures Valid(sensor_result_queue);
+
+    complete behaviors;
+    disjoint behaviors;
 */
 RESPONSE SENSOR_A_get_result_scan_x (int id, SENSOR_A_get_result_x_t *params_p)
 {
@@ -261,7 +289,7 @@ RESPONSE SENSOR_A_get_result_scan_x (int id, SENSOR_A_get_result_x_t *params_p)
 
     int res = get_result(sensor_result_queue, id, &scan_result_temp, REQUEST_X);
 
-    if(res != 0)
+    if(res < 0)
         return ERROR_GET_SCAN_A;
 
     *params_p = *(scan_result_temp->result_x);
@@ -269,12 +297,25 @@ RESPONSE SENSOR_A_get_result_scan_x (int id, SENSOR_A_get_result_x_t *params_p)
     return OK;
 }
 
-
-
-
 /*@
+    requires Valid(sensor_result_queue);
+    requires \valid(params_p);
+    requires \valid(id_p);
 
-    ensures \result == 0 || \result == 1;
+    behavior not_full:
+        assumes NotFull(sensor_result_queue);
+
+        ensures RESULT_IS_OK:\result == 0;
+        ensures Valid(sensor_result_queue);
+
+    behavior full:
+        assumes Full(sensor_result_queue);
+
+        ensures RESULT_IS_BAD: \result == 1;
+        ensures Valid(sensor_result_queue);
+
+    complete behaviors;
+    disjoint behaviors;
 */
 RESPONSE SENSOR_A_request_y(const SENSOR_request_scan_y_t *params_p, int *id_p)
 {
@@ -282,7 +323,7 @@ RESPONSE SENSOR_A_request_y(const SENSOR_request_scan_y_t *params_p, int *id_p)
 
     if(sensor_result_queue->size >= CAPACITY)
     {
-        return ERROR_SCAN_A;
+        return ERROR_GET_SCAN_A;
     }
 
     /*
@@ -297,7 +338,9 @@ RESPONSE SENSOR_A_request_y(const SENSOR_request_scan_y_t *params_p, int *id_p)
 
     scan_result_t *scan_result = (scan_result_t *) malloc (sizeof (scan_result_t));
 
-    scan_result->id = 0000000000000000000000000000000000000000000000000000000000001;
+    scan_result->id = 0 /* Should be generated */;
+    // *id_p = 0
+
     /* Tag it as a Y result */
     scan_result->request_type = REQUEST_Y;
 
@@ -307,23 +350,42 @@ RESPONSE SENSOR_A_request_y(const SENSOR_request_scan_y_t *params_p, int *id_p)
     /* Push result onto the global queue */
     int res = add_result(sensor_result_queue, scan_result);
 
-    if(res != 0)
-        return ERROR_SCAN_A;
+    if(res < 0)
+        return ERROR_GET_SCAN_A;
 
     return OK;
 }
 
 
 /*@
-    ensures \result == 0 || \result == 2;
+    requires Valid(sensor_result_queue);
+    requires \valid(params_p);
+
+    behavior valid_id:
+        assumes \exists integer k; (0 <= k < Capacity) && Storage(sensor_result_queue)[k]->id == id 
+        && (Storage(sensor_result_queue)[k]->request_type == 1);
+        assigns *params_p;
+
+        ensures \result == 0;
+        ensures Valid(sensor_result_queue);
+
+    behavior invalid_id:
+        assumes \forall integer k; (0 <= k < Capacity) ==> Storage(sensor_result_queue)[k]->id != id || 
+        (Storage(sensor_result_queue)[k]->request_type != 1);
+        
+        ensures \result == 2;
+        ensures Valid(sensor_result_queue);
+
+    complete behaviors;
+    disjoint behaviors;
 */
 RESPONSE SENSOR_A_get_result_scan_y(int id, SENSOR_A_get_result_y_t *params_p)
 {
-    scan_result_t *scan_result_temp = NULL;
+    scan_result_t *scan_result_temp;
 
     int res = get_result(sensor_result_queue, id, &scan_result_temp, REQUEST_Y);
 
-    if(res != 0)
+    if(res < 0)
         return ERROR_SCAN_A;
 
     *(params_p) = *(scan_result_temp->result_y);

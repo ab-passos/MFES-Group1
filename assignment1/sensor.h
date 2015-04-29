@@ -57,7 +57,7 @@ typedef struct
 // Predicates:
     //@ predicate Empty{L}(sensor_t* s) = Size(s) == 0;
     //@ predicate Full{L}(sensor_t* s) = Size(s) == Capacity;
-
+    //@ predicate NotFull{L}(sensor_t *s) = Size(s) < Capacity;
 /*@
 // tests if every cell of the array is unchanged 
 predicate
@@ -82,12 +82,12 @@ predicate
 // tests if there are no cells with the same ID
 predicate
     NoIdEqual{L}(sensor_t* s) =
-        \forall integer i ; 0 <= i < 200 && 
+        \forall integer i ; 0 <= i < Capacity && 
 
-            \forall integer k ; 0 <= k < 200 &&
+            \forall integer k ; 0 <= k < Capacity &&
 
-                k != i ==> \valid(Storage(s)[i]) && 
-                \valid(Storage(s)[k]) &&
+                k != i && \valid(Storage(s)[i]) && 
+                \valid(Storage(s)[k]) ==> 
                  Storage(s)[i]->id != Storage(s)[k]->id ;
 */
 
@@ -95,7 +95,8 @@ predicate
 predicate Valid{L}(sensor_t* s) =  \valid(s) &&
                                 0 < Capacity &&
                                 0 <= Size(s) < Capacity &&
-                \valid(Storage(s) + (0..Capacity-1));
+                \valid(Storage(s) + (0..Capacity-1)) &&
+                NoIdEqual{L}(s);
 */
 
 /*@
